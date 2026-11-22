@@ -20,8 +20,6 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - uses: android-actions/setup-android@v3
-
       - name: Find project (unzip if a .zip was uploaded)
         run: |
           ZIP=$(ls -t ./*.zip 2>/dev/null | head -1 || true)
