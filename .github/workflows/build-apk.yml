@@ -1,1 +1,62 @@
+name: Build APK
 
+# Runs automatically whenever you push/upload a .zip (or any change) to the repo,
+# and can also be started by hand from the Actions tab.
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to attach the APK to a Release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Find project (unzip if a .zip was uploaded)
+        run: |
+          ZIP=$(ls -t ./*.zip 2>/dev/null | head -1 || true)
+          if [ -n "$ZIP" ]; then
+            echo "Found zip: $ZIP"
+            rm -rf /tmp/proj && mkdir -p /tmp/proj && unzip -q "$ZIP" -d /tmp/proj
+            PROJ=$(dirname "$(find /tmp/proj -name settings.gradle.kts -not -path '*/__MACOSX/*' | head -1)")
+          else
+            PROJ=$GITHUB_WORKSPACE
+          fi
+          [ -f "$PROJ/settings.gradle.kts" ] || { echo "settings.gradle.kts not found"; exit 1; }
+          echo "PROJ=$PROJ" >> "$GITHUB_ENV"
+          echo "Project dir: $PROJ"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build release APK
+        working-directory: ${{ env.PROJ }}
+        run: chmod +x ./gradlew && ./gradlew assembleRelease --no-daemon
+
+      - name: Rename APK
+        run: |
+          mkdir -p /tmp/out
+          cp "$PROJ"/app/build/outputs/apk/release/*.apk /tmp/out/PMS-Preparation.apk
+
+      - name: Upload APK (Actions > run > Artifacts)
+        uses: actions/upload-artifact@v4
+        with:
+          name: PMS-Preparation-apk
+          path: /tmp/out/PMS-Preparation.apk
+
+      - name: Publish APK in Releases (direct download link)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "build-${{ github.run_number }}" /tmp/out/PMS-Preparation.apk \
+            --title "PMS Preparation build ${{ github.run_number }}" \
+            --notes "Built automatically from commit ${GITHUB_SHA::7}" --latest
